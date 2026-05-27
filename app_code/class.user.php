@@ -252,7 +252,8 @@ class USER
 		else {
 			$dat = $this->date_format($date);
 		}
-		$sql = "select obs_data.id,concat(obs_data.station_no, '-',stations.station_name) as station_no, COALESCE(obs_data.rainfall,'Nan') as rainfall, COALESCE(obs_data.dry_bulb_temperature, 'nan') as dry_bulb_temperature,COALESCE(obs_data.wet_bulb_temperature, 'nan') as wet_bulb_temperature, COALESCE(obs_data.max_temperature,'nan') as max_temperature, COALESCE(obs_data.min_temperature,'nan') as min_temperature, COALESCE(obs_data.sunshine_hours,'nan') as sunshine_hours,COALESCE(obs_data.radiation, 'nan') as radiation,COALESCE(obs_data.rh, 'nan') as rh, to_char( obs_data.date_entry, 'DD-MM-YYYY HH:mi') as date_entry from obs_data ";
+		// Select all fields so the view can render every sensor column + any other metadata fields.
+		$sql = "select obs_data.*, concat(obs_data.station_no, '-', stations.station_name) as station_label, to_char(obs_data.date_entry, 'DD-MM-YYYY HH:mi') as date_entry_fmt from obs_data ";
 		$sql .= "left join stations on obs_data.station_no = stations.station_no ";
 		$sql .= "WHERE obs_data.station_no Like :uname and to_char(obs_data.date_entry, 'YYYY-MM-DD HH:mi:SS') LIKE :date order by obs_data.date_entry desc";
 		  

@@ -111,13 +111,35 @@
                                     <a class="ibox-collapse"><i class="fa fa-minus"></i></a>
                                 </div>
                             </div>
-                            <div class="ibox-body">
-                            <div class="table-responsive">
-                                <table class="table table-bordered" id="records_table">
-                                        <tbody>
-                                        </tbody>
-                                    </table>
-                            </div>
+                                                        <div class="ibox-body">
+                                                        <!-- Top scrollbar -->
+                                                        <div id="top-scrollbar" style="overflow-x:auto; width:100%; height:18px;">
+                                                            <div style="height:1px; min-width:1200px;"></div>
+                                                        </div>
+                                                        <div class="table-responsive" id="table-scrollbar" style="overflow-x:auto; width:100%;">
+                                                                <table class="table table-bordered" id="records_table" style="white-space:nowrap;">
+                                                                                <tbody>
+                                                                                </tbody>
+                                                                        </table>
+                                                        </div>
+                                    <script type="text/javascript">
+                                    // Sync top scrollbar with table scrollbar
+                                    $(function(){
+                                        var $top = $('#top-scrollbar');
+                                        var $table = $('#table-scrollbar');
+                                        $top.scroll(function(){ $table.scrollLeft($top.scrollLeft()); });
+                                        $table.scroll(function(){ $top.scrollLeft($table.scrollLeft()); });
+                                        // Resize top scrollbar inner div to match table width
+                                        function syncWidth() {
+                                            var table = document.getElementById('records_table');
+                                            if (table) {
+                                                var w = table.scrollWidth;
+                                                $('#top-scrollbar > div').width(w);
+                                            }
+                                        }
+                                        setInterval(syncWidth, 500);
+                                    });
+                                    </script>
                             <table>
                             <tbody>
                             <tr>
@@ -180,17 +202,6 @@
                 var dataString = $("#station").val();
                 var datee = $("#datee").val();
 
-                var table_head = "<thead class='thead-default'><tr><th>ID</th><th>Station</th><th>Rainfall<span style='font-size:10px;'>(mm)</span></th><th>Dry Bulb Temp<span style='font-size:10px;'>(°C)</span></th>";
-                table_head += "<th>Wet Bulb Temp<span style='font-size:10px;'>(°C)</span></th>";
-                table_head += "<th>RH<span style='font-size:10px;'>(%)</span></th>";
-                table_head += "<th>Max Temp<span style='font-size:10px;'>(°C)</span></th>";
-                table_head += "<th>Min Temp<span style='font-size:10px;'>(°C)</span></th>";
-                table_head += "<th>Sunshine<span style='font-size:10px;'>(hrs)</span></th>";
-                table_head += "<th>Radiation<span style='font-size:10px;'>(MJ m<sup>-2</sup>)</span></th>";
-                table_head += "<th>Date Entry</th>";
-                table_head += "<th>Edit</th>";
-                table_head += "</tr></thead>";
-                
                 // AJAX Code To Submit Form.
                 $.ajax({
                     type: "POST",
@@ -198,14 +209,17 @@
                     data: {data : dataString, date:datee},
                     cache: false,
                     success: function(result){
-                        $('#records_table').append(table_head);
-                        $('#records_table').append(result);
+                        if ($.trim(result) === '') {
+                            $('#records_table').html("<tbody><tr><td>No Records Found.</td></tr></tbody>");
+                            document.getElementById("csv").style.display='none';
+                            document.getElementById("csv2").style.display='none';
+                            return;
+                        }
+
+                        // view_post.php returns <thead> + <tbody> for all fields.
+                        $('#records_table').html(result);
                         document.getElementById("csv").style.display='block';
                         document.getElementById("csv2").style.display='block';
-                        if(result == ''){
-                            $tbl = "<tr> <td colspan='11'>No Records Found.</td></tr>";
-                            $('#records_table').append($tbl);
-                        }
                     },
                     complete: function(){
                             $('#submit').val("Search").attr("disabled", false);
