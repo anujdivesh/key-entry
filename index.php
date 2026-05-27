@@ -290,7 +290,16 @@ $(document).ready(function() {
 														if ($dew_sensor_id !== null && (string)$row['id'] === (string)$dew_sensor_id) {
 															continue;
 														}
-                                                        $is_flag = in_array((int)$row['id'], $flag_sensor_ids, true);
+                                                        $sensor_id_int = (int)$row['id'];
+                                                        $sensor_name_norm = strtolower(trim((string)$row['sensor_name']));
+                                                        $flag_sensor_names = [
+                                                            'gale',
+                                                            'lightning',
+                                                            'thunder',
+                                                            'fog',
+                                                            'dew flag',
+                                                        ];
+                                                        $is_flag = in_array($sensor_id_int, $flag_sensor_ids, true) || in_array($sensor_name_norm, $flag_sensor_names, true);
                                                 echo "<div class='col-sm-2 form-group sensor-field' id='".$row['id']."' style='display: none;'>";
                                                 if ($is_flag) {
                                                     // Always submit a value: N by default, Y when checked. Checkbox comes before label.
