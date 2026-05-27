@@ -16,13 +16,8 @@
   }
 
   if(isset($_GET['data_id'])) {
-    $dataid =  base64_decode(urldecode($_GET['data_id']));
-    $query = "select id,station_no,station_value,logged_value,is_edited,is_processed, ";
-    $query .="COALESCE(rainfall,'Nan') as rainfall, COALESCE(dry_bulb_temperature, 'nan') as dry_bulb_temperature,";
-    $query .="COALESCE(wet_bulb_temperature, 'nan') as wet_bulb_temperature, COALESCE(rh, 'nan') as rh, COALESCE(max_temperature,'nan') as max_temperature,";
-    $query .=" COALESCE(min_temperature,'nan') as min_temperature, COALESCE(sunshine_hours,'nan') as sunshine_hours,COALESCE(radiation, 'nan') as radiation,";
-    $query .=" to_char( date_entry, 'DD-MON-YYYY HH:mi') as date_entry, TO_CHAR(created_at at time zone 'utc' at time zone 'Pacific/Fiji', 'DD-MON-YYYY hh12:mi:ss AM') as created_at, remarks, to_char( date_entry, 'YYYY-MM-DD') as dt_ent from obs_data ";
-    $query .="where id = :di";
+        $dataid =  base64_decode(urldecode($_GET['data_id']));
+        $query = "select obs_data.*, to_char( date_entry, 'DD-MON-YYYY HH:mi') as date_entry, TO_CHAR(created_at at time zone 'utc' at time zone 'Pacific/Fiji', 'DD-MON-YYYY hh12:mi:ss AM') as created_at, to_char( date_entry, 'YYYY-MM-DD') as dt_ent from obs_data where id = :di";
     
     $userstmt = $auth_user->runQuery($query);
     $userstmt->execute(array(":di"=>$dataid));
@@ -33,28 +28,10 @@
     $logged_value = $userinfo['logged_value'];
     $is_edited = $userinfo['is_edited'];
     $is_processed = $userinfo['is_processed'];
-    $rainfall = $userinfo['rainfall'];
-    $dry_bulb_temperature = $userinfo['dry_bulb_temperature'];
-    $wet_bulb_temperature = $userinfo['wet_bulb_temperature'];
-    $rh = $userinfo['rh'];
-    $max_temperature = $userinfo['max_temperature'];
-    $min_temperature = $userinfo['min_temperature'];
-    $sunshine_hours = $userinfo['sunshine_hours'];
-    $radiation = $userinfo['radiation'];
     $date_entry = $userinfo['date_entry'];
     $created_at = $userinfo['created_at'];
     $remark = $userinfo['remarks'];
     $dt_ent = $userinfo['dt_ent'];
-
-    $elements = array();
-    $elements[] = $rainfall;
-    $elements[] = $dry_bulb_temperature;
-    $elements[] = $wet_bulb_temperature;
-    #$elements[] = $rh;
-    $elements[] = $max_temperature;
-    $elements[] = $min_temperature;
-    $elements[] = $sunshine_hours;
-    $elements[] = $radiation;
 
     if ($is_edited == 'N'){$is_edited = 'No';}else{$is_edited = 'Yes';}
     if ($is_processed == 'N'){$is_processed = 'No';}else{$is_processed = 'Yes';}
@@ -62,7 +39,9 @@
     $sname = $auth_user->getStationName($station_no);
     $ar = $auth_user->getStationAcess($station_no);
     $station_arrr = explode (",", $ar); 
-    rsort($station_arrr);
+        $station_arrr = array_map('trim', $station_arrr);
+        $station_arrr = array_values(array_filter($station_arrr, 'is_numeric'));
+        // Preserve station sensor order as configured (do not sort).
     $my_list = array();
     for ($i = 0; $i < count($station_arrr); $i++) {
         $e = strval($station_arrr[$i]);
@@ -70,6 +49,7 @@
         $real_v = "";
         $my_list[$e] = $station_arrr[$i];
     }
+
 
     $prod_qty = '0';
     $button_cls = "warning";
@@ -148,13 +128,28 @@
                             <?php
                                 $has_dry = false;
                                 $has_wet = false;
+									$has_dewpoint = false;
                                 $dry = $wet = 0;
+									$dew_sensor_id = $auth_user->getDewPointSensorId();
 
                                 foreach($my_list as $key => $value){
-                                    $val = $elements[$key-1];
+                                    // RH is calculated; do not show it as an entered/editable sensor.
+                                    if ((string)$key === '8') {
+                                        continue;
+                                    }
+										// Dew Point is calculated; do not show it as an entered/editable sensor.
+										if ($dew_sensor_id !== null && (string)$key === (string)$dew_sensor_id) {
+											$has_dewpoint = true;
+											continue;
+										}
+                                    $reference_col = $auth_user->getReference($value);
+                                    $val = 'nan';
+                                    if ($reference_col && array_key_exists($reference_col, $userinfo) && $userinfo[$reference_col] !== null && $userinfo[$reference_col] !== '') {
+                                        $val = $userinfo[$reference_col];
+                                    }
                                     echo "<div class='col-sm-2 form-group'>";
                                     echo "<label>". $auth_user->getSensorName($value) ."</label>";
-                                    echo "<input style='color:blue;' class='form-control' type='text' name ='".$value."' id='".$key."' value='".$val."' ".$element_active.">";
+                                    echo "<input style='color:blue;' class='form-control sensor-edit-value' type='text' name ='".$value."' id='".$key."' value='".$val."' ".$element_active.">";
                                     echo "</div>";
                                     if($key == 2)
                                     {
@@ -167,12 +162,26 @@
                                         $wet = $val;
                                     }
                                 }
-                                if ($has_dry && $has_wet){
-                                    $rhh = $auth_user->rh_calculator($dry, $wet);
+                                if ($has_dry && $has_wet && is_numeric($dry) && is_numeric($wet) && (float)$dry !== 999.0 && (float)$wet !== 999.0){
+                                    $rhh = $auth_user->rh_calculator((float)$dry, (float)$wet);
                                     echo "<div class='col-sm-2 form-group'>";
                                     echo "<label>RH</label>";
-                                    echo "<input style='color:blue;' class='form-control' type='text' name ='8' id='8' value='".number_format($rhh,1)."' disabled=''>";
+                                    echo "<input style='color:blue;' class='form-control sensor-edit-value' type='text' name ='8' id='8' value='".number_format($rhh,1)."' disabled=''>";
                                     echo "</div>";
+
+                                        if ($has_dewpoint && $dew_sensor_id !== null) {
+                                                $dew = $auth_user->dew_point_calculator((float)$dry, (float)$wet);
+                                                if ($dew !== null) {
+                                                    $dew_label = $auth_user->getSensorName($dew_sensor_id);
+                                                    if (empty($dew_label)) {
+                                                        $dew_label = 'Dew Point';
+                                                    }
+                                                    echo "<div class='col-sm-2 form-group'>";
+                                                    echo "<label>".$dew_label."</label>";
+                                                    echo "<input style='color:blue;' class='form-control' type='text' value='".number_format($dew,1)."' disabled=''>";
+                                                    echo "</div>";
+                                                }
+                                            }
                                 }
 
 
@@ -273,42 +282,19 @@
                 var date_enter = "<?php echo $dt_ent; ?>"; 
                 var user_id = "<?php echo $user_id; ?>"; 
                 var remark = $("#remark").val();
-                var p1p = $("#1").val();
-                var p2p = $("#2").val();
-                var p3p = $("#3").val();
-                var p4p = $("#4").val();
-                var p5p = $("#5").val();
-                var p6p = $("#6").val();
-                var p7p = $("#7").val();
-                var p8p = $("#8").val();
-                var dataString = "";
-                if (p1p != null){
-                    dataString = dataString.concat('1='+ p1p)
-                }
-                if (p2p != null){
-                    dataString = dataString.concat('&2='+ p2p)
-                }
-                if (p3p != null){
-                    dataString = dataString.concat('&3='+ p3p)
-                }
-                if (p4p != null){
-                    dataString = dataString.concat('&4='+ p4p)
-                }
-                if (p5p != null){
-                    dataString = dataString.concat('&5='+ p5p)
-                }
-                if (p6p != null){
-                    dataString = dataString.concat('&6='+ p6p)
-                }
-                if (p7p != null){
-                    dataString = dataString.concat('&7='+ p7p)
-                }
-                if (p8p != null){
-                    dataString = dataString.concat('&8='+ p8p)
-                }
-                if (dataString.charAt(0) == '&'){
-                    dataString = dataString.substr(1);
-                }
+                var dataParts = [];
+                $(".sensor-edit-value").each(function(){
+                    var sensorId = $(this).attr("id");
+                    var sensorValue = $(this).val();
+                    // RH (id=8) is calculated on the server; don't submit it.
+                    if (sensorId === '8') {
+                        return;
+                    }
+                    if (sensorId && sensorValue != null) {
+                        dataParts.push(sensorId + '=' + sensorValue);
+                    }
+                });
+                var dataString = dataParts.join('&');
                 // AJAX Code To Submit Form.
                 $.ajax({
                     type: "POST",

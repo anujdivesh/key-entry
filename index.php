@@ -33,6 +33,16 @@
 
 
   $sensor_array = $auth_user->getsensors();
+    // Define which sensor ids should be rendered as checkboxes (flags)
+    $flag_sensor_ids = [15,16,17, 18, 19];
+    // Define which sensor ids should allow any text (not just numeric)
+    $text_sensor_ids = [22]; // <-- Add sensor ids here that should allow any text
+    // Defensive: ensure numeric ordering even if DB returns ids as strings.
+    usort($sensor_array, function($a, $b) {
+        return (int)$a['id'] <=> (int)$b['id'];
+    });
+    $sensor_ids = array_map('intval', array_column($sensor_array, 'id'));
+	$dew_sensor_id = $auth_user->getDewPointSensorId();
 
 
 ?>
@@ -52,22 +62,30 @@ $(document).ready(function() {
     var p = $('#station').val();
     var nameArr = p.split(',');
     document.getElementById( "error_para" ).innerHTML = "";
-    
-    var len = <?php echo count($sensor_array); ?>
 
-    for (i = 0; i < len+1; i++) {
-        if (i == 0){
-            $('#Submit').hide();
-        }
-      $('#'+i).hide();
-    }  
+    var sensorIds = <?php echo json_encode($sensor_ids); ?>;
 
+    $('#Submit').hide();
+    for (i = 0; i < sensorIds.length; i++) {
+      $('#' + sensorIds[i]).hide();
+    }
+
+    // Show sensors in the station-configured order (do not force ascending)
+    var container = $('#sensor-container');
     for (i = 1; i < nameArr.length; i++) {
+        var sensorId = $.trim(nameArr[i]);
+        if (sensorId === '') {
+            continue;
+        }
         if (i == 1){
             $('#Submit').show();
         }
-      $('#'+nameArr[i]).show();
-    } 
+        var sensorEl = $('#' + sensorId);
+        if (sensorEl.length) {
+            container.append(sensorEl);
+            sensorEl.show();
+        }
+    }
 /*
     var people = ["false","false","false", "false", "false", "false", "false"];
 
@@ -126,47 +144,20 @@ $(document).ready(function() {
 
     function validateForm() {
         var error = "*Please Fill All Required Fields.";
-        if(document.getElementById("1").style.display != "none") {
-            if(document.getElementById("p1p").value == "") {
-                document.getElementById( "error_para" ).innerHTML = error;
+        var hasVisibleSensor = false;
+        var isValid = true;
+
+        $('.sensor-field:visible .sensor-input').each(function() {
+            hasVisibleSensor = true;
+            if ($(this).val() === "") {
+                isValid = false;
                 return false;
-            } 
-        }
-        if(document.getElementById("2").style.display != "none") {
-            if(document.getElementById("p2p").value == "") {
-                document.getElementById( "error_para" ).innerHTML = error;
-                return false;
-            } 
-        }
-        if(document.getElementById("3").style.display != "none") {
-            if(document.getElementById("p3p").value == "") {
-                document.getElementById( "error_para" ).innerHTML = error;
-                return false;
-            } 
-        }
-        if(document.getElementById("4").style.display != "none") {
-            if(document.getElementById("p4p").value == "") {
-                document.getElementById( "error_para" ).innerHTML = error;
-                return false;
-            } 
-        }
-        if(document.getElementById("5").style.display != "none") {
-            if(document.getElementById("p5p").value == "") {
-                document.getElementById( "error_para" ).innerHTML = error;
-                return false;
-            } 
-        }
-        if(document.getElementById("6").style.display != "none") {
-            if(document.getElementById("p6p").value == "") {
-                document.getElementById( "error_para" ).innerHTML = error;
-                return false;
-            } 
-        }
-        if(document.getElementById("7").style.display != "none") {
-            if(document.getElementById("p7p").value == "") {
-                document.getElementById( "error_para" ).innerHTML = error;
-                return false;
-            } 
+            }
+        });
+
+        if (!hasVisibleSensor || !isValid) {
+            document.getElementById( "error_para" ).innerHTML = error;
+            return false;
         }
         //check time
         var dateString = document.getElementById('datee').value;
@@ -288,12 +279,36 @@ $(document).ready(function() {
                                 </div>
                             </div>
                             <div class="ibox-body">
-                                    <div class="row">
+                                    <div class="row" id="sensor-container">
                                         <?php
                                             foreach($sensor_array as $row){
-                                                echo "<div class='col-sm-2 form-group' id='".$row['id']."' style='display: none;'>";
-                                                echo "<label>". $row['sensor_name'] ." <span style='color:red;'>*</span></label>";
-                                                echo "<input class='form-control' type='text' name ='p".$row['id']."p' id ='p".$row['id']."p' onkeypress='return isNumberKey(event)'>";
+                                                // RH is a calculated value (from Dry/Wet), so it should not be entered manually.
+                                                if ((string)$row['id'] === '8') {
+                                                    continue;
+                                                }
+														// Dew Point is also a calculated value (from Dry/Wet), so it should not be entered manually.
+														if ($dew_sensor_id !== null && (string)$row['id'] === (string)$dew_sensor_id) {
+															continue;
+														}
+                                                        $is_flag = in_array((int)$row['id'], $flag_sensor_ids, true);
+                                                echo "<div class='col-sm-2 form-group sensor-field' id='".$row['id']."' style='display: none;'>";
+                                                if ($is_flag) {
+                                                    // Always submit a value: N by default, Y when checked. Checkbox comes before label.
+                                                    echo "<input type='hidden' name='p".$row['id']."p' value='N'>";
+                                                    echo "<div style='display: flex; align-items: center; padding-top:20px'>";
+                                                    echo "<input class='sensor-input' type='checkbox' name='p".$row['id']."p' id='p".$row['id']."p' value='Y' style='margin-right: 8px; transform: scale(1.2);'>";
+                                                    echo "<label for='p".$row['id']."p' style='margin-bottom:0; margin-top:5px; white-space:nowrap; display:inline-block;'>". $row['sensor_name'] ." <span style='color:red;'>*</span></label>";
+                                                    echo "</div>";
+                                                } else {
+                                                    echo "<label style='white-space:nowrap; display:inline-block;'>". $row['sensor_name'] ."<span style='color:red;'>*</span></label>";
+                                                    if (in_array((int)$row['id'], $text_sensor_ids, true)) {
+                                                        // Allow only text (no numbers)
+                                                        echo "<input class='form-control sensor-input' type='text' name ='p".$row['id']."p' id ='p".$row['id']."p' pattern='[^0-9]*' title='Numbers are not allowed' onkeypress=\"return /[0-9]/.test(event.key) ? false : true;\" onpaste=\"if (/[0-9]/.test((event.clipboardData || window.clipboardData).getData('text'))) { event.preventDefault(); }\">";
+                                                    } else {
+                                                        // Only numeric
+                                                        echo "<input class='form-control sensor-input' type='text' name ='p".$row['id']."p' id ='p".$row['id']."p' onkeypress='return isNumberKey(event)'>";
+                                                    }
+                                                }
                                                 echo "</div>";
                                             }
 

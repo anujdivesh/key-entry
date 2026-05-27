@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+	<emailsrv>simoli.met.gov.fj</emailsrv>
+	<emailport>25</emailport>
+	<climatesrv>192.168.50.22</climatesrv>
+	<climatedb>clideDB</climatedb>
+	<climateuser>postgres</climateuser>
+	<climatepass>Y2xpZGVzcWw=</climatepass>
+	<climateftpuser>anuj_ftp</climateftpuser>
+	<climateftppass>Y2xpZGUx</climateftppass>
+	<keyentrysrv>192.168.7.18</keyentrysrv>
+	<keyentrydb>manualDB</keyentrydb>
+	<keyentryuser>anuj</keyentryuser>
+	<keyentrypass>U2ltcGxlMTA=</keyentrypass>
+	<interruptprocess>15</interruptprocess>
+</configuration>

@@ -24,7 +24,9 @@
     $station_det = $ar[0]. " - ". $sname;
     unset($ar[0]);
     $station_arrr = array_values($ar);
-    rsort($station_arrr);
+    $station_arrr = array_map('trim', $station_arrr);
+    $station_arrr = array_values(array_filter($station_arrr, 'is_numeric'));
+    // Preserve station sensor order as configured (do not sort).
     $my_list = array();
     for ($i = 0; $i < count($station_arrr); $i++) {
         $e = strval($station_arrr[$i]);
@@ -110,15 +112,23 @@
                                             $has_dry = false;
                                             $has_wet = false;
                                             $dry = $wet = 0;
-                                            asort($my_list);
+                                        $dew_sensor_id = $auth_user->getDewPointSensorId();
                                             foreach($my_list as $key => $value){                                                
+                                                // RH is calculated; do not show it as an entered sensor.
+                                                if ((string)$value === '8') {
+                                                    continue;
+                                                }
+                                            // Dew Point is calculated; do not show it as an entered sensor.
+                                            if ($dew_sensor_id !== null && (string)$value === (string)$dew_sensor_id) {
+                                                continue;
+                                            }
                                                 $val = $_POST['p'.$key.'p'];
                                                 if (empty($_POST['p'.$key.'p']) && $_POST['p'.$key.'p'] != '0'){
                                                     $val='null';
                                                 }
                                                 echo "<div class='col-sm-2 form-group'>";
                                                 echo "<label>". $auth_user->getSensorName($value) ."</label>";
-                                                echo "<input style='color:blue;' class='form-control' type='text' name ='".$value."' id='".$value."' value='".$val."' disabled=''>";
+                                                echo "<input style='color:blue;' class='form-control sensor-confirm-value' type='text' name ='".$value."' id='".$value."' value='".$val."' disabled=''>";
                                                 echo "</div>";
                                                 if($value == 2)
                                                 {
@@ -131,13 +141,27 @@
                                                     $wet = $val;
                                                 }
                                             }
-                                            if ($has_dry && $has_wet){
-                                                $rh = $auth_user->rh_calculator($dry, $wet);
+                                            if ($has_dry && $has_wet && is_numeric($dry) && is_numeric($wet) && (float)$dry !== 999.0 && (float)$wet !== 999.0){
+                                                $rh = $auth_user->rh_calculator((float)$dry, (float)$wet);
 
                                                 echo "<div class='col-sm-2 form-group'>";
                                                 echo "<label>RH</label>";
-                                                echo "<input style='color:blue;' class='form-control' type='text' name ='8' id='8' value='".$rh."' disabled=''>";
+                                                echo "<input style='color:blue;' class='form-control sensor-confirm-value' type='text' name ='8' id='8' value='".$rh."' disabled=''>";
                                                 echo "</div>";
+
+                                            if ($dew_sensor_id !== null) {
+                                                $dew = $auth_user->dew_point_calculator((float)$dry, (float)$wet);
+                                                if ($dew !== null) {
+                                                    $dew_label = $auth_user->getSensorName($dew_sensor_id);
+                                                    if (empty($dew_label)) {
+                                                        $dew_label = 'Dew Point';
+                                                    }
+                                                    echo "<div class='col-sm-2 form-group'>";
+                                                    echo "<label>".$dew_label."</label>";
+                                                    echo "<input style='color:blue;' class='form-control' type='text' value='".number_format($dew,1)."' disabled=''>";
+                                                    echo "</div>";
+                                                }
+                                            }
                                             }
 
 
@@ -214,43 +238,19 @@
                 var user_id = "<?php echo $user_id; ?>"; 
                 var date_enter = $("#date").val();
                 var remark = $("#remark").val();
-                var p1p = $("#1").val();
-                var p2p = $("#2").val();
-                var p3p = $("#3").val();
-                var p4p = $("#4").val();
-                var p5p = $("#5").val();
-                var p6p = $("#6").val();
-                var p7p = $("#7").val();
-                var p8p = $("#8").val();
-
-                var dataString = "";
-                if (p1p != null){
-                    dataString = dataString.concat('1='+ p1p)
-                }
-                if (p2p != null){
-                    dataString = dataString.concat('&2='+ p2p)
-                }
-                if (p3p != null){
-                    dataString = dataString.concat('&3='+ p3p)
-                }
-                if (p4p != null){
-                    dataString = dataString.concat('&4='+ p4p)
-                }
-                if (p5p != null){
-                    dataString = dataString.concat('&5='+ p5p)
-                }
-                if (p6p != null){
-                    dataString = dataString.concat('&6='+ p6p)
-                }
-                if (p7p != null){
-                    dataString = dataString.concat('&7='+ p7p)
-                }
-                if (p8p != null){
-                    dataString = dataString.concat('&8='+ p8p)
-                }
-                if (dataString.charAt(0) == '&'){
-                    dataString = dataString.substr(1);
-                }
+                var dataParts = [];
+                $(".sensor-confirm-value").each(function(){
+                    var sensorId = $(this).attr("id");
+                    var sensorValue = $(this).val();
+                    // RH (id=8) is calculated on the server; don't submit it.
+                    if (sensorId === '8') {
+                        return;
+                    }
+                    if (sensorId && sensorValue != null) {
+                        dataParts.push(sensorId + '=' + sensorValue);
+                    }
+                });
+                var dataString = dataParts.join('&');
                 
                 // AJAX Code To Submit Form.
                 $.ajax({

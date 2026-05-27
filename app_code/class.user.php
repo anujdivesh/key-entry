@@ -287,39 +287,86 @@ class USER
 			$ed = 'Y';
 			$edate = date('Y-m-d H:i:s');
 			$pr = 'N';
-			$dry=$wet=0;
+			$dry = null;
+			$wet = null;
+			$dew_sensor_id = $this->getDewPointSensorId();
 			foreach($data_arr as $item) {
-				$item_arr = explode ("=", $item);  
-				$element_id = $this->getReference($item_arr[0]);
+				$item_arr = explode ("=", $item, 2);
+				if (count($item_arr) !== 2) {
+					continue;
+				}
+				$sensor_id = trim($item_arr[0]);
 				$element_value = $item_arr[1];
 
-				##NEW
-				if ($item_arr[0] == 2){
-					$dry = $item_arr[1];
+				// Track Dry/Wet for RH calculation
+				if ($sensor_id == '2'){
+					$dry = $element_value;
 				}
-				if ($item_arr[0] == 3){
-					$wet = $item_arr[1];
-				}
-				if ($item_arr[0] == 8){
-					$element_value = $this->rh_calculator($dry, $wet);
+				if ($sensor_id == '3'){
+					$wet = $element_value;
 				}
 
+				// RH + Dew Point are calculated; ignore any incoming values
+				if ($sensor_id == '8' || ($dew_sensor_id !== null && $sensor_id === (string)$dew_sensor_id)) {
+					continue;
+				}
 
-				$stmtt = $this->conn->prepare("UPDATE obs_data set ".$element_id."= :did, logged_id = :lid, logged_value = :lval, is_edited= :edit, edited_time = :etime, remarks = :remark, is_processed = :process where station_no = :id and date_entry = :date");
-												  
+				$element_id = $this->getReference($sensor_id);
+				$stmtt = $this->conn->prepare("UPDATE obs_data set ".$element_id."= :did, logged_id = :lid, logged_value = :lval, is_edited= :edit, edited_time = :etime, remarks = :remark, is_processed = :process, variables_flag = :variables_flag where station_no = :id and date_entry = :date");
 				$stmtt->bindparam(":did", $element_value);
-				$stmtt->bindparam(":lid", $user_id);	
-				$stmtt->bindparam(":lval", $username);	
-				$stmtt->bindparam(":edit", $ed);	
-				$stmtt->bindparam(":etime", $edate);	
-				$stmtt->bindparam(":remark", $remark);	
-				$stmtt->bindparam(":process", $pr);	
-				$stmtt->bindparam(":id", $station);		
-				$stmtt->bindparam(":date", $dat);							  
-					
-				$stmtt->execute();	
+				$stmtt->bindparam(":lid", $user_id);
+				$stmtt->bindparam(":lval", $username);
+				$stmtt->bindparam(":edit", $ed);
+				$stmtt->bindparam(":etime", $edate);
+				$stmtt->bindparam(":remark", $remark);
+				$stmtt->bindparam(":process", $pr);
+				$variables_flag = "N";
+				$stmtt->bindparam(":variables_flag", $variables_flag);
+				$stmtt->bindparam(":id", $station);
+				$stmtt->bindparam(":date", $dat);
+				$stmtt->execute();
+			}
 
+			// Always update RH based on Dry/Wet if we can
+			if ($dry !== null && $wet !== null && $dry !== '' && $wet !== '' && is_numeric($dry) && is_numeric($wet) && (float)$dry !== 999.0 && (float)$wet !== 999.0) {
+				$rh_value = $this->rh_calculator((float)$dry, (float)$wet);
+				$rh_col = $this->getReference('8');
+				$stmtt = $this->conn->prepare("UPDATE obs_data set ".$rh_col."= :did, logged_id = :lid, logged_value = :lval, is_edited= :edit, edited_time = :etime, remarks = :remark, is_processed = :process, variables_flag = :variables_flag where station_no = :id and date_entry = :date");
+				$stmtt->bindparam(":did", $rh_value);
+				$stmtt->bindparam(":lid", $user_id);
+				$stmtt->bindparam(":lval", $username);
+				$stmtt->bindparam(":edit", $ed);
+				$stmtt->bindparam(":etime", $edate);
+				$stmtt->bindparam(":remark", $remark);
+				$stmtt->bindparam(":process", $pr);
+				$variables_flag = "N";
+				$stmtt->bindparam(":variables_flag", $variables_flag);
+				$stmtt->bindparam(":id", $station);
+				$stmtt->bindparam(":date", $dat);
+				$stmtt->execute();
+			}
 
+			// Always update Dew Point based on Dry/Wet if we can (when sensor exists)
+			if ($dew_sensor_id !== null && $dry !== null && $wet !== null && $dry !== '' && $wet !== '' && is_numeric($dry) && is_numeric($wet) && (float)$dry !== 999.0 && (float)$wet !== 999.0) {
+				$dew_value = $this->dew_point_calculator((float)$dry, (float)$wet);
+				if ($dew_value !== null) {
+					$dew_col = $this->getReference($dew_sensor_id);
+					if (!empty($dew_col)) {
+						$stmtt = $this->conn->prepare("UPDATE obs_data set ".$dew_col."= :did, logged_id = :lid, logged_value = :lval, is_edited= :edit, edited_time = :etime, remarks = :remark, is_processed = :process, variables_flag = :variables_flag where station_no = :id and date_entry = :date");
+						$stmtt->bindparam(":did", $dew_value);
+						$stmtt->bindparam(":lid", $user_id);
+						$stmtt->bindparam(":lval", $username);
+						$stmtt->bindparam(":edit", $ed);
+						$stmtt->bindparam(":etime", $edate);
+						$stmtt->bindparam(":remark", $remark);
+						$stmtt->bindparam(":process", $pr);
+						$variables_flag = "N";
+						$stmtt->bindparam(":variables_flag", $variables_flag);
+						$stmtt->bindparam(":id", $station);
+						$stmtt->bindparam(":date", $dat);
+						$stmtt->execute();
+					}
+				}
 			}
 			
 			return true;	
@@ -339,8 +386,8 @@ class USER
 			$username = $this->getUsername($user_id);
 			$clide_table = $this->getClideTable($station);
 			$ed = 'N';
-
-			$stmt = $this->conn->prepare("insert into obs_data (station_no, station_value, date_entry, clide_table, logged_id, logged_value, is_edited, is_processed, remarks) VALUES (:a, :b, :c, :d, :e, :f, :g, :h, :i)");
+			
+			$stmt = $this->conn->prepare("insert into obs_data (station_no, station_value, date_entry, clide_table, logged_id, logged_value, is_edited, is_processed,variables_flag, remarks) VALUES (:a, :b, :c, :d, :e, :f, :g, :h, :j, :i)");
 												  
 			$stmt->bindparam(":a", $station);
 			$stmt->bindparam(":b", $station_name);	
@@ -350,25 +397,73 @@ class USER
 			$stmt->bindparam(":f", $username);	
 			$stmt->bindparam(":g", $ed);	
 			$stmt->bindparam(":h", $ed);	
+			$variables_flag = "N";
+			$stmt->bindparam(":j", $variables_flag);   
 			$stmt->bindparam(":i", $remark);	
 				
 			$stmt->execute();	
+			
 
+
+			
+			$dry = null;
+			$wet = null;
+			$dew_sensor_id = $this->getDewPointSensorId();
 			foreach($data_arr as $item) {
-				$item_arr = explode ("=", $item);  
-				$element_id = $this->getReference($item_arr[0]);
+				$item_arr = explode ("=", $item, 2);
+				if (count($item_arr) !== 2) {
+					continue;
+				}
+				$sensor_id = trim($item_arr[0]);
 				$element_value = $item_arr[1];
 
+				if ($sensor_id == '2') {
+					$dry = $element_value;
+				}
+				if ($sensor_id == '3') {
+					$wet = $element_value;
+				}
+
+				// RH + Dew Point are calculated; ignore any incoming values
+				if ($sensor_id == '8' || ($dew_sensor_id !== null && $sensor_id === (string)$dew_sensor_id)) {
+					continue;
+				}
+
+				$element_id = $this->getReference($sensor_id);
 				$stmtt = $this->conn->prepare("UPDATE obs_data set ".$element_id."= :did where station_no = :id and date_entry = :date and logged_id = :uid");
-												  
 				$stmtt->bindparam(":did", $element_value);
-				$stmtt->bindparam(":id", $station);		
-				$stmtt->bindparam(":date", $dat);	
-				$stmtt->bindparam(":uid", $user_id);							  
-					
-				$stmtt->execute();	
+				$stmtt->bindparam(":id", $station);
+				$stmtt->bindparam(":date", $dat);
+				$stmtt->bindparam(":uid", $user_id);
+				$stmtt->execute();
+			}
 
+			// Always update RH based on Dry/Wet if we can
+			if ($dry !== null && $wet !== null && $dry !== '' && $wet !== '' && is_numeric($dry) && is_numeric($wet) && (float)$dry !== 999.0 && (float)$wet !== 999.0) {
+				$rh_value = $this->rh_calculator((float)$dry, (float)$wet);
+				$rh_col = $this->getReference('8');
+				$stmtt = $this->conn->prepare("UPDATE obs_data set ".$rh_col."= :did where station_no = :id and date_entry = :date and logged_id = :uid");
+				$stmtt->bindparam(":did", $rh_value);
+				$stmtt->bindparam(":id", $station);
+				$stmtt->bindparam(":date", $dat);
+				$stmtt->bindparam(":uid", $user_id);
+				$stmtt->execute();
+			}
 
+			// Always update Dew Point based on Dry/Wet if we can (when sensor exists)
+			if ($dew_sensor_id !== null && $dry !== null && $wet !== null && $dry !== '' && $wet !== '' && is_numeric($dry) && is_numeric($wet) && (float)$dry !== 999.0 && (float)$wet !== 999.0) {
+				$dew_value = $this->dew_point_calculator((float)$dry, (float)$wet);
+				if ($dew_value !== null) {
+					$dew_col = $this->getReference($dew_sensor_id);
+					if (!empty($dew_col)) {
+						$stmtt = $this->conn->prepare("UPDATE obs_data set ".$dew_col."= :did where station_no = :id and date_entry = :date and logged_id = :uid");
+						$stmtt->bindparam(":did", $dew_value);
+						$stmtt->bindparam(":id", $station);
+						$stmtt->bindparam(":date", $dat);
+						$stmtt->bindparam(":uid", $user_id);
+						$stmtt->execute();
+					}
+				}
 			}
 			
 			return true;	
@@ -488,6 +583,42 @@ class USER
 	
 		$g = ($f - .66875 * (1 + .00115 * $wet) * ($dry - $wet))/ $e;
 		return round($g*100,0);
+	}
+
+	public function getDewPointSensorId(){
+		static $cached_id = null;
+		static $loaded = false;
+		if ($loaded) {
+			return $cached_id;
+		}
+		$loaded = true;
+		try {
+			$stmt = $this->runQuery("SELECT id FROM sensors WHERE lower(sensor_name) LIKE '%dew%' OR lower(reference_col) LIKE '%dew%' ORDER BY id LIMIT 1");
+			$stmt->execute();
+			$row = $stmt->fetch(PDO::FETCH_ASSOC);
+			if ($row && isset($row['id']) && $row['id'] !== null && $row['id'] !== '') {
+				$cached_id = (string)$row['id'];
+			}
+		} catch (Exception $e) {
+			$cached_id = null;
+		}
+		return $cached_id;
+	}
+
+	public function dew_point_calculator($dry, $wet){
+		// Compute actual vapour pressure (hPa) from dry & wet bulb temps, then invert Magnus formula.
+		$a = 240.97 + $wet;
+		$b = 17.502 * $wet;
+		$c = $b / $a;
+		$d = pow(2.71828, $c);
+		$es_wet = 6.112 * $d;
+		$ea = $es_wet - .66875 * (1 + .00115 * $wet) * ($dry - $wet);
+		if ($ea <= 0) {
+			return null;
+		}
+		$ln = log($ea / 6.112);
+		$td = (240.97 * $ln) / (17.502 - $ln);
+		return round($td, 1);
 	}
 
 	public function getSensorName($id){
@@ -799,7 +930,8 @@ class USER
 	}
 
 	public function getsensors(){
-        $stmt1 = $this->runQuery("SELECT sensor_name, id FROM sensors");
+		// Force numeric ordering even if sensors.id is stored as text.
+		$stmt1 = $this->runQuery("SELECT sensor_name, id FROM sensors ORDER BY id::int ASC");
         $stmt1->execute();
         $userRow1 = $stmt1->fetchAll(PDO::FETCH_ASSOC);
         return $userRow1;
