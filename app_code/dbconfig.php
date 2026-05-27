@@ -18,8 +18,8 @@ class Database
         try 
         {
             
-            #$this->con = new PDO("pgsql:host=192.168.7.18;port=5432;dbname=manualDB;user=anuj;password=Simple10");
-            $this->con = new PDO("pgsql:host=localhost;port=5432;dbname=manualDB;user=postgres;password=Oceanportal2017*");
+            $this->con = new PDO("pgsql:host=192.168.7.18;port=5432;dbname=manualDB;user=anuj;password=Simple10");
+            #$this->con = new PDO("pgsql:host=localhost;port=5432;dbname=manualDB;user=postgres;password=Oceanportal2017*");
             
             return $this->con;
         } 
