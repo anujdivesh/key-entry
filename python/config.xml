@@ -8,7 +8,7 @@
 	<climatepass>Y2xpZGVzcWw=</climatepass>
 	<climateftpuser>anuj_ftp</climateftpuser>
 	<climateftppass>Y2xpZGUx</climateftppass>
-	<keyentrysrv>192.168.7.18</keyentrysrv>
+	<keyentrysrv>localhost</keyentrysrv>
 	<keyentrydb>manualDB</keyentrydb>
 	<keyentryuser>anuj</keyentryuser>
 	<keyentrypass>U2ltcGxlMTA=</keyentrypass>
