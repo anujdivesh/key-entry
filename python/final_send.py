@@ -1,4 +1,3 @@
-
 import psycopg2
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -30,16 +29,11 @@ class mailer:
 
 class DBHelper:
     def __init__(self):
-        itemlist = xmldoc.getElementsByTagName('keyentrysrv') 
-        self.host = itemlist[0].firstChild.nodeValue
-        itemlist = xmldoc.getElementsByTagName('keyentryuser') 
-        self.user = itemlist[0].firstChild.nodeValue
-        itemlist = xmldoc.getElementsByTagName('keyentrypass') 
-        passw = base64.b64decode(itemlist[0].firstChild.nodeValue)
-#        passw = str(passw, "utf-8")
-        self.password = passw
-        itemlist = xmldoc.getElementsByTagName('keyentrydb') 
-        self.db = itemlist[0].firstChild.nodeValue
+        # Hardcoded DB config for user 'anuj'
+        self.host = '192.168.7.18'
+        self.user = 'anuj'
+        self.password = 'Simple10'
+        self.db = 'manualDB'
         self.port = 5432
 
     def __connect__(self):
@@ -119,12 +113,7 @@ class CLIHelper:
         PORT = self.climateftpport
         ftp = FTP()
         ftp.connect(HOST, PORT)
-        # Decode password if it's bytes
-        passwd = self.climateftppass.decode() if isinstance(self.climateftppass, bytes) else self.climateftppass
-        ftp.login(user=self.climateftpuser, passwd=passwd)
-        print(self.climateftpuser,passwd)
-        import sys
-        sys.exit()
+        ftp.login(user='anuj_ftp', passwd = 'clide1')
         fp = open(file_name, 'rb')
         ftp.storbinary('STOR %s' % os.path.basename(file_name), fp, 1024)
         ftp.quit()
@@ -140,12 +129,15 @@ conditions = "variables_flag = 'N'"
 upsql = f"SELECT {', '.join(fields)} FROM {table} WHERE {conditions};"
 unprocessed_records = DBAccess.fetch(upsql)
 
-
 # Create DataFrame
 df = pd.DataFrame(unprocessed_records, columns=fields)
 # Multiply wind_dir by 10 if present
 if 'wind_dir' in df.columns:
     df['wind_dir'] = df['wind_dir'] * 10
+
+# If wind_dir is 0, set wind_speed_bft to 0
+if 'wind_speed_bft' in df.columns and 'wind_dir' in df.columns:
+    df.loc[df['wind_dir'] == 0, 'wind_speed_bft'] = 0
 # Rename 'date_entry' to 'lsd'
 df = df.rename(columns={"date_entry": "lsd"})
 
@@ -318,29 +310,52 @@ else:
 """
 # TEST: Write a CSV with only one pair of soil_depth,soil_temp for the first depth
 
+
 # Loop through all depths and create a CSV for each
+csv_files_to_remove = [obs_daily_filename, obs_subdaily_filename]
 for test_soil_depth in soil_depths:
     test_cols = ['station_no', 'lsd', f'soil_depth_{test_soil_depth}', f'soil_temp_{test_soil_depth}']
     test_header = ['station_no', 'lsd', 'soil_depth', 'soil_temp']
     single_depth_df = obs_subdaily_soil_temps[test_cols].copy()
+    # Skip CSV creation if all soil_temp values for this depth are 999
+    soil_temp_col = f'soil_temp_{test_soil_depth}'
+    if single_depth_df[soil_temp_col].eq(999).all():
+        print(f"Skipping {soil_temp_col} (all values 999)")
+        continue
     filename = f"obs_subdaily_soil_temps_{test_soil_depth}cm_{dt_now}.csv"
     with open(filename, "w") as f:
         f.write("obs_subdaily_soil_temps\n")
         pd.DataFrame([test_header], columns=test_cols).to_csv(f, index=False, header=False)
         single_depth_df.to_csv(f, index=False, header=False)
+    csv_files_to_remove.append(filename)
     # Show preview for each CSV
     if has_extra_columns(single_depth_df):
         print(f"obs_subdaily_soil_temps ({test_soil_depth}cm) preview:")
         print(single_depth_df.head())
-        #FTPSrv.file_sender(filename)
+        FTPSrv.file_sender(filename)
     else:
         print(f"{filename} will NOT be sent (only station_no, lsd)")
+
+# Remove all generated CSV files after sending
+for csv_file in csv_files_to_remove:
+    try:
+        os.remove(csv_file)
+        print(f"Removed {csv_file}")
+    except Exception as e:
+        print(f"Could not remove {csv_file}: {e}")
 
 if not df.empty:
     # Get unique dates sent (from 'lsd' column, which is formatted as YYYY-MM-DD)
     sent_dates = df['lsd'].unique()
     for sent_date in sent_dates:
+        # Convert numpy.datetime64 to string if needed
+        if hasattr(sent_date, 'astype'):
+            sent_date_str = str(sent_date.astype('M8[D]'))
+        else:
+            sent_date_str = str(sent_date)
         # Update obs_daily table for this date
-        update_sql = "UPDATE obs_data SET variables_flag = 'Y' WHERE date_entry = %s"
-        DBAccess.execute(update_sql, (sent_date,))
-        print(f"Updated obs_daily for date_entry={sent_date}, set variables_flag='Y'")
+        #send_date_str = sent_date_str + " 09:00:00"
+        update_sql = "UPDATE obs_data SET variables_flag = 'Y' WHERE DATE(date_entry) = %s"
+        DBAccess.execute(update_sql, (sent_date_str,))
+        print(f"Updated obs_daily for date_entry={sent_date_str}, set variables_flag='Y'")
+
